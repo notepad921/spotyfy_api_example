@@ -46,7 +46,6 @@ Každý request obsahuje Postman testovací skripty (`pm.test`), které:
 
 ## Cíl projektu
 Cílem je demonstrovat jednoduchou, ale dobře strukturovanou kolekci pro testování REST API s využitím reálného veřejného rozhraní.  
-Projekt je vhodný jako ukázka pro SDET/QA Engineer pozice.
 
 ## Použité technologie
 - **Postman** – tvorba a spouštění API testů  
