@@ -1,0 +1,437 @@
+{
+  "info": {
+    "_postman_id": "9f1d9c3d-aaaa-bbbb-cccc-spotify-sdet-demo",
+    "name": "Spotify Playlist CRUD — SDET Demo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Minimal backend tests for Spotify Web API using playlists (create/add/remove). Includes token refresh and test assertions.\n\n⚠️ Note: Spotify's public Web API does **not** let you create or mutate albums. Playlists are the correct user-scoped entity to CRUD."
+  },
+  "item": [
+    {
+      "name": "00 ▶ Setup / Refresh Access Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Expect 200 and access_token present; save to env",
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "pm.test('access_token present', function () {",
+              "  pm.expect(json).to.have.property('access_token');",
+              "});",
+              "",
+              "pm.environment.set('access_token', json.access_token);",
+              "if (json.refresh_token) {",
+              "  pm.environment.set('refresh_token', json.refresh_token);",
+              "}",
+              "if (json.expires_in) {",
+              "  const expiresAt = Date.now() + (json.expires_in * 1000) - 60000; // minus 60s buffer",
+              "  pm.environment.set('token_expires_at', String(expiresAt));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          {
+            "key": "Authorization",
+            "value": "Basic {{basic_auth_b64}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://accounts.spotify.com/api/token",
+          "protocol": "https",
+          "host": [
+            "accounts",
+            "spotify",
+            "com"
+          ],
+          "path": [
+            "api",
+            "token"
+          ]
+        },
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "key": "refresh_token",
+              "value": "{{refresh_token}}"
+            }
+          ]
+        },
+        "description": "Refresh access_token via OAuth 2.0 using client credentials in Basic auth header (base64(client_id:client_secret))."
+      }
+    },
+    {
+      "name": "01 ▶ Get Current User Profile (whoami)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Refresh token automatically if expiring",
+              "const exp = Number(pm.environment.get('token_expires_at') || 0);",
+              "if (!pm.environment.get('access_token') || Date.now() > exp) {",
+              "  postman.setNextRequest('00 ▶ Setup / Refresh Access Token');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const me = pm.response.json();",
+              "pm.test('id present', () => pm.expect(me).to.have.property('id'));",
+              "pm.environment.set('user_id', me.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "https://api.spotify.com/v1/me",
+          "protocol": "https",
+          "host": [
+            "api",
+            "spotify",
+            "com"
+          ],
+          "path": [
+            "v1",
+            "me"
+          ]
+        },
+        "description": "Fetch current user profile; saves user_id."
+      }
+    },
+    {
+      "name": "02 ▶ Create Playlist",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const exp = Number(pm.environment.get('token_expires_at') || 0);",
+              "if (!pm.environment.get('access_token') || Date.now() > exp) {",
+              "  postman.setNextRequest('00 ▶ Setup / Refresh Access Token');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('playlist id present', () => pm.expect(json).to.have.property('id'));",
+              "pm.environment.set('playlist_id', json.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://api.spotify.com/v1/users/{{user_id}}/playlists",
+          "protocol": "https",
+          "host": [
+            "api",
+            "spotify",
+            "com"
+          ],
+          "path": [
+            "v1",
+            "users",
+            "{{user_id}}",
+            "playlists"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"{{playlist_name}}\", \"description\": \"SDET demo playlist created by Postman collection.\", \"public\": false}"
+        },
+        "description": "Create a private playlist for the current user."
+      }
+    },
+    {
+      "name": "03 ▶ Add Tracks to Playlist",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const exp = Number(pm.environment.get('token_expires_at') || 0);",
+              "if (!pm.environment.get('access_token') || Date.now() > exp) {",
+              "  postman.setNextRequest('00 ▶ Setup / Refresh Access Token');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('snapshot_id present', () => pm.expect(json).to.have.property('snapshot_id'));",
+              "pm.environment.set('snapshot_id', json.snapshot_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "https://api.spotify.com/v1/playlists/{{playlist_id}}/tracks?uris={{track_uris}}",
+          "protocol": "https",
+          "host": [
+            "api",
+            "spotify",
+            "com"
+          ],
+          "path": [
+            "v1",
+            "playlists",
+            "{{playlist_id}}",
+            "tracks"
+          ],
+          "query": [
+            {
+              "key": "uris",
+              "value": "{{track_uris}}"
+            }
+          ]
+        },
+        "description": "Add one or more tracks to the playlist by URIs (comma-separated). Example: spotify:track:4uLU6hMCjMI75M1A2tKUQC"
+      }
+    },
+    {
+      "name": "04 ▶ Verify Playlist Items",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const exp = Number(pm.environment.get('token_expires_at') || 0);",
+              "if (!pm.environment.get('access_token') || Date.now() > exp) {",
+              "  postman.setNextRequest('00 ▶ Setup / Refresh Access Token');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('items array exists', () => pm.expect(json).to.have.property('items'));",
+              "// Soft assert that at least 1 item present when run after add",
+              "pm.test('has at least 1 track (soft)', () => pm.expect(json.items.length).to.be.above(0));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "https://api.spotify.com/v1/playlists/{{playlist_id}}/tracks?limit=10",
+          "protocol": "https",
+          "host": [
+            "api",
+            "spotify",
+            "com"
+          ],
+          "path": [
+            "v1",
+            "playlists",
+            "{{playlist_id}}",
+            "tracks"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Fetch first 10 items of the playlist."
+      }
+    },
+    {
+      "name": "05 ▶ Remove Tracks from Playlist",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const exp = Number(pm.environment.get('token_expires_at') || 0);",
+              "if (!pm.environment.get('access_token') || Date.now() > exp) {",
+              "  postman.setNextRequest('00 ▶ Setup / Refresh Access Token');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('snapshot_id present', () => pm.expect(json).to.have.property('snapshot_id'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://api.spotify.com/v1/playlists/{{playlist_id}}/tracks",
+          "protocol": "https",
+          "host": [
+            "api",
+            "spotify",
+            "com"
+          ],
+          "path": [
+            "v1",
+            "playlists",
+            "{{playlist_id}}",
+            "tracks"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"tracks\": [{\"uri\": \"{{track_uri_single}}\"}]}"
+        },
+        "description": "Remove specified track(s) by URI from playlist."
+      }
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Shared pre-request hook could go here if needed"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "basic_auth_b64",
+      "value": "{{auto_fill_base64_clientid_secret}}",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": ""
+    },
+    {
+      "key": "client_secret",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "token_expires_at",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "playlist_id",
+      "value": ""
+    },
+    {
+      "key": "playlist_name",
+      "value": "SDET Demo Playlist"
+    },
+    {
+      "key": "track_uris",
+      "value": "spotify:track:11dFghVXANMlKmJXsNCbNl"
+    },
+    {
+      "key": "track_uri_single",
+      "value": "spotify:track:11dFghVXANMlKmJXsNCbNl"
+    }
+  ]
+}
